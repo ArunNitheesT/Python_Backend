@@ -1,7 +1,5 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from engine import evaluate_task
 
@@ -15,8 +13,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
 
 class TaskInput(BaseModel):
     text: str
@@ -29,13 +25,8 @@ class TaskOutput(BaseModel):
 
 
 @app.get("/")
-def serve_home():
-    return FileResponse("static/index.html")
-
-
-@app.get("/audit")
-def serve_audit():
-    return FileResponse("static/audit.html")
+def root():
+    return {"status": "AIRE backend is running"}
 
 
 @app.post("/analyze", response_model=TaskOutput)
