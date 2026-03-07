@@ -3,20 +3,21 @@ import logging
 import warnings
 import requests
 
-os.environ["TRANSFORMERS_VERBOSITY"] = "error"
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
 logging.getLogger("transformers").setLevel(logging.ERROR)
-logging.getLogger("transformers.modeling_utils").setLevel(logging.ERROR)
 warnings.filterwarnings("ignore")
 
-from transformers import pipeline
-import ollama
+HF_API_KEY = os.environ.get("HF_API_KEY", "")
+HF_API_URL = "https://api-inference.huggingface.co/models/facebook/bart-large-mnli"
 
-classifier = pipeline(
-    "zero-shot-classification",
-    model="facebook/bart-large-mnli",
-    verbose=False
-)
+
+def classifier(text, labels):
+    headers = {"Authorization": f"Bearer {HF_API_KEY}"}
+    payload = {
+        "inputs": text,
+        "parameters": {"candidate_labels": labels}
+    }
+    response = requests.post(HF_API_URL, headers=headers, json=payload)
+    return response.json()
 
 
 def get_domain_sensitivity_score(text):
@@ -186,14 +187,12 @@ def decide_from_role(role):
 
 
 def generate_explanation(decision, role, evidence):
-    
     context = f"""
     Decision: {decision}
     Responsibility Type: {role}
     Key Factors: {", ".join(evidence) if evidence else "general risk assessment"}
     """
-    
-    print(context)
+
     prompt = f"""
     You are an AI ethics reviewer writing a justification for a company manager.
     Write a natural human explanation.
@@ -206,17 +205,16 @@ def generate_explanation(decision, role, evidence):
     - Do not change the decision and do not invent new reasons
     Context:{context}
     """
-    
+
     response = requests.post(url="https://aura-backend-phi.vercel.app/api/llm", json={"prompt": prompt})
     response = response.json()
     return response.get("response", "No explanation generated.")
 
+
 def evaluate_task(text):
-    # Classify responsibility type
     role = classify_responsibility(text)
     role_decision = decide_from_role(role)
 
-    # All scores are LOCAL — no global state, safe for concurrent calls
     rep     = get_repetitiveness_score(text)
     freq    = get_frequency_score(text)
     hj      = get_human_judgment_score(text)
@@ -229,7 +227,6 @@ def evaluate_task(text):
 
     _, ethical_risk = compute_scores(rep, freq, hj, ac, impact, domain, data, skill, emotion)
 
-    # Score-based safety override (catches classifier misses)
     if role_decision == "Fully Automate" and ethical_risk >= 4.0:
         final_decision = "Do NOT Automate"
     elif role_decision == "Fully Automate" and ethical_risk >= 2.8:
@@ -239,7 +236,6 @@ def evaluate_task(text):
     else:
         final_decision = role_decision
 
-    # Build evidence
     evidence = []
     if impact >= 4:  evidence.append("high real-world consequences")
     if hj >= 4:      evidence.append("requires human judgement")
@@ -249,18 +245,3 @@ def evaluate_task(text):
 
     explanation = generate_explanation(final_decision, role, evidence)
     return final_decision, role, explanation
-
-
-if __name__ == "__main__":
-    tests = [
-        "AI system to evaluate teacher performance and recommend promotions or terminations to school management.",
-        "Automatically sort incoming customer support emails into billing, technical, and general inquiry categories.",
-        "Use AI to automatically diagnose cancer and prescribe chemotherapy without doctor involvement.",
-    ]
-    for t in tests:
-        print(f"\nTask: {t}")
-        d, r, e = evaluate_task(t)
-        print(f"Decision   : {d}")
-        print(f"Role       : {r}")
-        print(f"Explanation: {e[:250]}...")
-        print("-" * 70)
