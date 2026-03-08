@@ -1,42 +1,48 @@
-from http.server import BaseHTTPRequestHandler
-import json
-import sys
-import os
-sys.path.append(os.path.dirname(__file__))
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
 from engine import evaluate_task
 
-class handler(BaseHTTPRequestHandler):
-    def do_OPTIONS(self):
-        self.send_response(200)
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
-        self.end_headers()
+app = FastAPI(title="AI Automation Responsibility Engine")
 
-    def do_GET(self):
-        self.send_response(200)
-        self.send_header('Content-type', 'application/json')
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.end_headers()
-        self.wfile.write(json.dumps({"status": "AIRE backend is running"}).encode())
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-    def do_POST(self):
-        if self.path == '/analyze':
-            content_length = int(self.headers['Content-Length'])
-            body = self.rfile.read(content_length)
-            data = json.loads(body)
-            text = data.get('text', '')
-            decision, role, explanation = evaluate_task(text)
-            response = {
-                "decision": decision,
-                "responsibility": role,
-                "explanation": explanation
-            }
-            self.send_response(200)
-            self.send_header('Content-type', 'application/json')
-            self.send_header('Access-Control-Allow-Origin', '*')
-            self.end_headers()
-            self.wfile.write(json.dumps(response).encode())
-        else:
-            self.send_response(404)
-            self.end_headers()
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+class TaskInput(BaseModel):
+    text: str
+
+
+class TaskOutput(BaseModel):
+    decision: str
+    responsibility: str
+    explanation: str
+
+
+@app.get("/")
+def serve_home():
+    return FileResponse("static/index.html")
+
+
+@app.get("/audit")
+def serve_audit():
+    return FileResponse("static/audit.html")
+
+
+@app.post("/analyze", response_model=TaskOutput)
+def analyze_task(data: TaskInput):
+    decision, role, explanation = evaluate_task(data.text)
+    return {
+        "decision": decision,
+        "responsibility": role,
+        "explanation": explanation
+    }
