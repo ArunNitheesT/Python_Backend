@@ -2,3 +2,6 @@ fastapi
 uvicorn
 pydantic
 requests
+transformers
+torch
+ollama
